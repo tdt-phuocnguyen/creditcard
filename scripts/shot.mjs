@@ -129,7 +129,8 @@ function auditInPage(SAFE) {
     const s = getComputedStyle(el);
     const clips = /(hidden|clip)/.test(s.overflowX + s.overflowY);
     if (!clips) continue;
-    if (el.closest("[data-allow-bleed], [data-scene-host]") || el.hasAttribute("data-allow-clip")) continue;
+    if (el.closest("[data-allow-bleed], [data-scene-host], .sr-only") || el.hasAttribute("data-allow-clip")) continue;
+    if (el.clientWidth <= 1 && el.clientHeight <= 1) continue;
     if (el.scrollHeight > el.clientHeight + 2 || el.scrollWidth > el.clientWidth + 2) {
       const txt = (el.textContent || "").replace(/\s+/g, " ").trim();
       if (txt) issues.clipped.push({ text: txt.slice(0, 60), scroll: [el.scrollWidth, el.scrollHeight], box: [el.clientWidth, el.clientHeight] });
@@ -156,8 +157,10 @@ for (const [w, h] of sizes) {
   });
   const page = await context.newPage();
   const logs = [];
+  // Ignore headless-GPU driver chatter (e.g. "GPU stall due to ReadPixels" caused by taking screenshots).
+  const noise = /GL Driver Message|GPU stall due to ReadPixels|\[\.WebGL-/;
   page.on("console", (m) => {
-    if (m.type() === "error" || m.type() === "warning") logs.push(`[${m.type()}] ${m.text().slice(0, 400)}`);
+    if ((m.type() === "error" || m.type() === "warning") && !noise.test(m.text())) logs.push(`[${m.type()}] ${m.text().slice(0, 400)}`);
   });
   page.on("pageerror", (e) => logs.push(`[pageerror] ${String(e).slice(0, 400)}`));
 

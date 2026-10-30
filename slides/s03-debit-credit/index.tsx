@@ -1,8 +1,13 @@
 import { defineSlide } from "../types";
-import { createPlaceholder } from "../_placeholder";
+import { DebitCreditSlide } from "./DebitCreditSlide";
 
+/**
+ * Steps: 0 = definitions side by side (balances at their starting values);
+ *        1 = the illustrative 2.000.000 payment: debit balance drops,
+ *            credit amount owed appears; key message.
+ */
 export default defineSlide({
   id: "debit-credit",
-  steps: 1,
-  Component: createPlaceholder(3),
+  steps: 2,
+  Component: DebitCreditSlide,
 });

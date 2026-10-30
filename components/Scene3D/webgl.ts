@@ -21,9 +21,12 @@ export function detectWebGL(): boolean {
   return cached;
 }
 
-/** `null` until known (server render / first client render), then true/false. */
+/**
+ * WebGL support. Slides only render on the client (after mount), so this is
+ * known on the first render; `null` only if ever rendered on the server.
+ */
 export function useWebGLSupport(): boolean | null {
-  const [supported, setSupported] = useState<boolean | null>(null);
+  const [supported, setSupported] = useState<boolean | null>(() => (typeof window === "undefined" ? null : detectWebGL()));
   useEffect(() => {
     setSupported(detectWebGL());
   }, []);

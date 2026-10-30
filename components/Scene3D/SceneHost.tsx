@@ -49,6 +49,7 @@ export function SceneHost({
   label,
   className,
   style,
+  fallbackWhileLoading = true,
 }: {
   scene: ComponentType<SceneProps>;
   fallback: ReactNode;
@@ -56,6 +57,12 @@ export function SceneHost({
   label: string;
   className?: string;
   style?: CSSProperties;
+  /**
+   * Show the 2D fallback while the WebGL scene loads (default). Set false when
+   * the scene has its own entrance that should start from an empty stage —
+   * the fallback then appears only for thumbnails, no-WebGL or failures.
+   */
+  fallbackWhileLoading?: boolean;
 }) {
   const { isActive, isStatic, reducedMotion, step } = useSlide();
   const webgl = useWebGLSupport();
@@ -71,11 +78,17 @@ export function SceneHost({
   const onLost = useCallback(() => setFailed(true), []);
 
   return (
-    <div role="img" aria-label={label} className={cn("relative", className)} style={style} data-scene-host>
+    <div
+      role="img"
+      aria-label={label}
+      className={cn(/\b(absolute|fixed|sticky)\b/.test(className ?? "") ? undefined : "relative", className)}
+      style={style}
+      data-scene-host
+    >
       <div
         aria-hidden
         className="absolute inset-0 transition-opacity duration-500 ease-out"
-        style={{ opacity: enabled && ready ? 0 : 1 }}
+        style={{ opacity: enabled && (ready || !fallbackWhileLoading) ? 0 : 1 }}
         data-scene-fallback
       >
         {fallback}
