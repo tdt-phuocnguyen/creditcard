@@ -21,19 +21,17 @@ import type { SlideDefinition } from "@/slides/types";
 export function PreviewHost({ slide }: { slide: SlideDefinition }) {
   const mounted = useMounted();
   const reducedMotion = usePrefersReducedMotion();
-  const [step, setStep] = useState(0);
-  const [isStatic, setIsStatic] = useState(false);
-  const [chrome, setChrome] = useState(true);
+  // Read once from the URL. Safe: nothing is rendered until mounted, so the
+  // hydration render never depends on these values.
+  const [params] = useState(() => new URLSearchParams(typeof window === "undefined" ? "" : window.location.search));
+  const [step, setStep] = useState(() => {
+    const requested = Number(params.get("step") ?? 0);
+    return Number.isFinite(requested) ? Math.max(0, Math.min(slide.steps - 1, requested)) : 0;
+  });
+  const isStatic = params.get("static") === "1";
+  const chrome = params.get("chrome") !== "0";
   const [replay, setReplay] = useState(0);
   const [direction, setDirection] = useState<1 | -1>(1);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const requested = Number(params.get("step") ?? 0);
-    setStep(Number.isFinite(requested) ? Math.max(0, Math.min(slide.steps - 1, requested)) : 0);
-    setIsStatic(params.get("static") === "1");
-    setChrome(params.get("chrome") !== "0");
-  }, [slide.steps]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {

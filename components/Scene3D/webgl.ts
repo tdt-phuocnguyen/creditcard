@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import { getRuntimeFlags } from "@/lib/flags";
 
 let cached: boolean | null = null;
@@ -21,14 +21,9 @@ export function detectWebGL(): boolean {
   return cached;
 }
 
-/**
- * WebGL support. Slides only render on the client (after mount), so this is
- * known on the first render; `null` only if ever rendered on the server.
- */
+const noopSubscribe = () => () => {};
+
+/** WebGL support: `null` during server render / hydration, then true/false (probed once). */
 export function useWebGLSupport(): boolean | null {
-  const [supported, setSupported] = useState<boolean | null>(() => (typeof window === "undefined" ? null : detectWebGL()));
-  useEffect(() => {
-    setSupported(detectWebGL());
-  }, []);
-  return supported;
+  return useSyncExternalStore<boolean | null>(noopSubscribe, detectWebGL, () => null);
 }

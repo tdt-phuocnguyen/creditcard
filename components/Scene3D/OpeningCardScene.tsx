@@ -130,7 +130,7 @@ function Card({ pose, reducedMotion }: { pose: CardPose; reducedMotion: boolean 
 }
 
 /** Scene A — the premium metal card for the opening (and, calmer, the closing). */
-export function CardScene({ step: _step, reducedMotion, onReady, onLost, pose = "hero" }: SceneProps & { pose?: CardPose }) {
+export function CardScene({ reducedMotion, onReady, onLost, pose = "hero" }: SceneProps & { pose?: CardPose }) {
   return (
     <SceneCanvas reducedMotion={reducedMotion} onReady={onReady} onLost={onLost} camera={{ position: [0, 0, 9.4], fov: 30 }}>
       <ambientLight intensity={0.18} />

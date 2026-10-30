@@ -3,11 +3,15 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { getRuntimeFlags } from "./flags";
 
-/** False during server render and hydration, true after mount. */
+const noopSubscribe = () => () => {};
+
+/** False during server render and hydration, true on the client afterwards. */
 export function useMounted(): boolean {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  return mounted;
+  return useSyncExternalStore(
+    noopSubscribe,
+    () => true,
+    () => false,
+  );
 }
 
 function subscribeMedia(query: string) {
@@ -31,8 +35,11 @@ export function useMediaQuery(query: string): boolean {
 /** OS "reduce motion" preference, or `?motion=reduce`. */
 export function usePrefersReducedMotion(): boolean {
   const os = useMediaQuery("(prefers-reduced-motion: reduce)");
-  const [flag, setFlag] = useState(false);
-  useEffect(() => setFlag(getRuntimeFlags().reduceMotion), []);
+  const flag = useSyncExternalStore(
+    noopSubscribe,
+    () => getRuntimeFlags().reduceMotion,
+    () => false,
+  );
   return os || flag;
 }
 

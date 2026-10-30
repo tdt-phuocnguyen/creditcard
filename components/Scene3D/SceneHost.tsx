@@ -1,6 +1,6 @@
 "use client";
 
-import { Component, useCallback, useEffect, useState, type ComponentType, type CSSProperties, type ReactNode } from "react";
+import { Component, useCallback, useState, type ComponentType, type CSSProperties, type ReactNode } from "react";
 import { useSlide } from "@/components/SlideContext";
 import { useWebGLSupport } from "./webgl";
 import { cn } from "@/lib/cn";
@@ -70,9 +70,12 @@ export function SceneHost({
   const [failed, setFailed] = useState(false);
   const enabled = isActive && !isStatic && webgl === true && !failed;
 
-  useEffect(() => {
+  // Reset readiness whenever the scene unmounts (documented "adjust state on prop change" pattern).
+  const [wasEnabled, setWasEnabled] = useState(enabled);
+  if (enabled !== wasEnabled) {
+    setWasEnabled(enabled);
     if (!enabled) setReady(false);
-  }, [enabled]);
+  }
 
   const onReady = useCallback(() => setReady(true), []);
   const onLost = useCallback(() => setFailed(true), []);

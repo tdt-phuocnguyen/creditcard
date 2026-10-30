@@ -1,8 +1,8 @@
 "use client";
 
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useCallback, useEffect, useReducer, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { ChevronLeft, ChevronRight, RotateCw, X } from "lucide-react";
+import { useCallback, useEffect, useEffectEvent, useReducer, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { slides } from "@/slides/registry";
 import { Backdrop } from "./Backdrop";
 import { HelpHint } from "./HelpHint";
@@ -56,6 +56,13 @@ function parseHash(hash: string): { index: number; step: number } | null {
   const index = Number(match[1]) - 1;
   if (index < 0 || index > LAST) return null;
   return { index, step: match[2] ? Number(match[2]) : 0 };
+}
+
+/** Initial slide from the URL hash (#/6 or #/6/2). Nothing renders before mount, so reading it here is hydration-safe. */
+function initNav(): Nav {
+  const target = typeof window === "undefined" ? null : parseHash(window.location.hash);
+  if (!target) return { index: 0, step: 0, direction: 1 };
+  return { index: target.index, step: Math.min(target.step, slides[target.index].steps - 1), direction: 1 };
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */
@@ -121,16 +128,18 @@ export function Presentation() {
   const viewport = useViewport();
   const reducedMotion = usePrefersReducedMotion();
 
-  const [nav, dispatch] = useReducer(navReducer, { index: 0, step: 0, direction: 1 });
-  const [hashReady, setHashReady] = useState(false);
+  const [nav, dispatch] = useReducer(navReducer, undefined, initNav);
   const [overviewOpen, setOverviewOpen] = useState(false);
-  const [helpOpen, setHelpOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(
+    () => typeof window !== "undefined" && !getRuntimeFlags().hideHelp && safeStorage.get(HELP_KEY) !== "1",
+  );
   const [blackout, setBlackout] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [idle, setIdle] = useState(false);
   const [hoverZone, setHoverZone] = useState<"prev" | "next" | null>(null);
   const [viewPref, setViewPref] = useState<"deck" | "reader" | null>(null);
+  const [rotateDismissed, setRotateDismissed] = useState(false);
 
   const overviewButtonFocus = useRef<HTMLElement | null>(null);
   const lastKeyNav = useRef(0);
@@ -144,11 +153,8 @@ export function Presentation() {
   const flagView = mounted ? getRuntimeFlags().view : null;
   const view = viewPref ?? flagView ?? (isPhone ? "reader" : "deck");
 
-  /* ── Initial slide from the URL hash (#/6 or #/6/2), then keep it in sync ── */
+  /* ── Follow manual hash edits, and keep the hash in sync with the slide ── */
   useEffect(() => {
-    const initial = parseHash(window.location.hash);
-    if (initial) dispatch({ type: "goto", index: initial.index, step: initial.step });
-    setHashReady(true);
     const onHashChange = () => {
       const target = parseHash(window.location.hash);
       if (target) dispatch({ type: "goto", index: target.index, step: target.step });
@@ -158,16 +164,10 @@ export function Presentation() {
   }, []);
 
   useEffect(() => {
-    if (!hashReady) return;
     const hash = `#/${nav.index + 1}${nav.step ? `/${nav.step}` : ""}`;
     if (window.location.hash !== hash) window.history.replaceState(null, "", hash);
     document.title = `${pad2(def.number)} · ${def.title} — ${DECK_TITLE}`;
-  }, [hashReady, nav.index, nav.step, def.number, def.title]);
-
-  /* ── Help hint on first visit ── */
-  useEffect(() => {
-    if (!getRuntimeFlags().hideHelp && safeStorage.get(HELP_KEY) !== "1") setHelpOpen(true);
-  }, []);
+  }, [nav.index, nav.step, def.number, def.title]);
 
   const closeHelp = useCallback(() => {
     setHelpOpen(false);
@@ -230,13 +230,12 @@ export function Presentation() {
   );
 
   /* ── Keyboard ── */
-  const stateRef = useRef({ overviewOpen, helpOpen, blackout, view });
-  stateRef.current = { overviewOpen, helpOpen, blackout, view };
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      const { overviewOpen: overview, helpOpen: help, blackout: black, view: currentView } = stateRef.current;
-      if (currentView !== "deck") return;
+  // Effect event: always sees the latest state without re-subscribing.
+  const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
+      const overview = overviewOpen;
+      const help = helpOpen;
+      const black = blackout;
+      if (view !== "deck") return;
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
       const target = event.target as Element | null;
       if (isEditable(target)) return;
@@ -326,17 +325,18 @@ export function Presentation() {
           }
           return;
       }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [next, prev, goto, toggleFullscreen, openOverview, closeOverview, closeHelp]);
+  });
+
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => onKeyDown(event);
+    window.addEventListener("keydown", listener);
+    return () => window.removeEventListener("keydown", listener);
+  }, []);
 
   /* ── Idle: hide cursor and controls while presenting (not on touch) ── */
+  const idleEnabled = view === "deck" && !viewport?.coarse;
   useEffect(() => {
-    if (view !== "deck" || viewport?.coarse) {
-      setIdle(false);
-      return;
-    }
+    if (!idleEnabled) return;
     let timer = window.setTimeout(() => setIdle(true), IDLE_MS);
     const wake = () => {
       setIdle(false);
@@ -352,13 +352,11 @@ export function Presentation() {
       window.removeEventListener("pointerdown", wake);
       window.removeEventListener("keydown", wake);
     };
-  }, [view, viewport?.coarse]);
+  }, [idleEnabled]);
+  const isIdle = idle && idleEnabled && !overviewOpen;
 
   /* ── Rotate hint for portrait touch screens ── */
-  const portraitTouch = Boolean(viewport?.coarse && viewport.height > viewport.width);
-  useEffect(() => {
-    if (view === "deck" && portraitTouch) notify("Xoay ngang thiết bị để xem slide lớn hơn.");
-  }, [view, portraitTouch, notify]);
+  const showRotateHint = Boolean(viewport?.coarse && viewport.height > viewport.width) && !rotateDismissed;
 
   /* ── Pointer: click zones (left = back, right = forward) and swipe ── */
   const zoneOf = (event: ReactPointerEvent<HTMLDivElement> | React.MouseEvent<HTMLDivElement>) => {
@@ -402,7 +400,7 @@ export function Presentation() {
   };
 
   /* ── Render ── */
-  if (!mounted || !viewport || !hashReady) return <Splash />;
+  if (!mounted || !viewport) return <Splash />;
 
   if (view === "reader") {
     return <MobileReader onOpenDeck={() => setViewPref("deck")} />;
@@ -414,7 +412,7 @@ export function Presentation() {
 
   return (
     <MotionConfig reducedMotion={reducedMotion ? "always" : "never"}>
-      <div className="fixed inset-0 select-none bg-letterbox" data-idle={idle && !overviewOpen ? "true" : "false"} data-view="deck">
+      <div className="fixed inset-0 select-none bg-letterbox" data-idle={isIdle ? "true" : "false"} data-view="deck">
         <main className="absolute inset-0">
           <SlideFrame label={`Slide ${def.number} trên ${slides.length}: ${def.title}`}>
             <Backdrop chapter={def.chapter} />
@@ -446,7 +444,7 @@ export function Presentation() {
                 aria-hidden
                 className={cn(
                   "pointer-events-none absolute left-6 top-1/2 -translate-y-1/2 text-ink-faint transition-opacity duration-300",
-                  hoverZone === "prev" && !idle && !atStart ? "opacity-60" : "opacity-0",
+                  hoverZone === "prev" && !isIdle && !atStart ? "opacity-60" : "opacity-0",
                 )}
               >
                 <ChevronLeft className="size-12" strokeWidth={1.25} />
@@ -455,7 +453,7 @@ export function Presentation() {
                 aria-hidden
                 className={cn(
                   "pointer-events-none absolute right-6 top-1/2 -translate-y-1/2 text-ink-faint transition-opacity duration-300",
-                  hoverZone === "next" && !idle && !atEnd ? "opacity-60" : "opacity-0",
+                  hoverZone === "next" && !isIdle && !atEnd ? "opacity-60" : "opacity-0",
                 )}
               >
                 <ChevronRight className="size-12" strokeWidth={1.25} />
@@ -466,7 +464,7 @@ export function Presentation() {
         </main>
 
         <ControlBar
-          hidden={idle && !helpOpen}
+          hidden={isIdle && !helpOpen}
           canPrev={!atStart}
           canNext={!atEnd}
           onPrev={prev}
@@ -519,6 +517,24 @@ export function Presentation() {
             </motion.div>
           ) : null}
         </AnimatePresence>
+
+        {showRotateHint ? (
+          <div
+            role="status"
+            className="fixed left-1/2 top-3 z-40 flex w-max max-w-[calc(100vw-1.5rem)] -translate-x-1/2 items-center gap-3 rounded-xl border border-line bg-surface-raised/95 py-2 pl-3.5 pr-1.5 text-[13px] text-ink shadow-xl backdrop-blur-md"
+          >
+            <RotateCw aria-hidden className="size-4 shrink-0 text-cyan" />
+            Xoay ngang thiết bị để xem slide lớn hơn.
+            <button
+              type="button"
+              onClick={() => setRotateDismissed(true)}
+              aria-label="Ẩn gợi ý"
+              className="grid size-7 place-items-center rounded-full text-ink-muted hover:bg-ink/10 hover:text-ink"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+        ) : null}
 
         <div aria-live="polite" className="sr-only">
           {`Slide ${def.number} trên ${slides.length}: ${def.title}`}
